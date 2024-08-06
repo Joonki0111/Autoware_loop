@@ -1,13 +1,15 @@
 #include "route_generator/route.hpp"
-using namespace std::chrono_literals;
 
 namespace route_component
 {
 
 RoutePublisher::RoutePublisher(const rclcpp::NodeOptions & node_options)
-: Node("route_publisher", node_options), generate_route_executed_(false), dist_threshold_(15.0)  //SHY
+: Node("route_publisher", node_options)
 {
-    client_ = this->create_client<SetRoutePoints>("/api/routing/set_route_points");   //SHY
+    dist_threshold_ = this->declare_parameter("dist_threshold", 15.0);
+    
+    client_ = this->create_client<SetRoutePoints>(
+        "/api/routing/set_route_points");  
 
     pose_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
         "/localization/kinematic_state", rclcpp::QoS(1),
@@ -20,14 +22,13 @@ RoutePublisher::RoutePublisher(const rclcpp::NodeOptions & node_options)
     checkpoint_vec_.push_back({-237.16, -402.70});
     checkpoint_vec_.push_back({-133.35, 108.05});
     checkpoint_vec_.push_back({-13.59, 3.99});
-
-    timer_ = this->create_wall_timer(
-        500ms, std::bind(&RoutePublisher::send_request, this));
+    
+    generate_route_executed_ = false;
 }
 
 void RoutePublisher::send_request()   //SHY
 {
-    if (!client_->wait_for_service(1s)) {
+    if (!client_->wait_for_service()) {
         RCLCPP_WARN(this->get_logger(), "Service not available");
         return;
     }
@@ -50,158 +51,160 @@ void RoutePublisher::send_request()   //SHY
 
 void RoutePublisher::generate_route(const int & closest_checkpoint)
 {
-    LaneletRoute route_msg;
+  LaneletRoute route_msg;
 
-    if (!generate_route_executed_)
-    {
-        route_msg = create_route1();
-        route_pub_->publish(route_msg);
-    }
+  if(!generate_route_executed_)
+  {
+    route_msg = create_route1();
+    route_pub_->publish(route_msg);
+    send_request();
+  }
 
-    switch (closest_checkpoint)
+  switch(closest_checkpoint)
+  {
+    case 1:
     {
-        case 1:
-        {
-            route_msg = create_route2();
-            route_pub_->publish(route_msg);
-            RCLCPP_INFO(rclcpp::get_logger("route_publisher"), "published 1st route");
-            break;
-        }
-        case 2:
-        {
-            route_msg = create_route3();
-            route_pub_->publish(route_msg);
-            RCLCPP_INFO(rclcpp::get_logger("route_publisher"), "published 2nd route");
-            break;
-        }
-        case 3:
-        {
-            route_msg = create_route4();
-            route_pub_->publish(route_msg);
-            RCLCPP_INFO(rclcpp::get_logger("route_publisher"), "published 3rd route");
-            break;
-        }
-        case 4:
-        {
-            route_msg = create_route1();
-            route_pub_->publish(route_msg);
-            RCLCPP_INFO(rclcpp::get_logger("route_publisher"), "published 4th route");
-            break;
-        }
-        default:
-        {
-            break;
-        }
+      route_msg = create_route2();
+      route_pub_->publish(route_msg);
+      RCLCPP_INFO(rclcpp::get_logger("route_publisher"),"published 1st route");
+      break;
     }
-    generate_route_executed_ = true;
+    case 2:
+    {
+      route_msg = create_route3();
+      route_pub_->publish(route_msg);
+      RCLCPP_INFO(rclcpp::get_logger("route_publisher"),"published 2nd route");
+      break;
+    }
+    case 3:
+    {
+      route_msg = create_route4();
+      route_pub_->publish(route_msg);
+      RCLCPP_INFO(rclcpp::get_logger("route_publisher"),"published 3rd route");
+      break;
+    }
+    case 4:
+    {
+      route_msg = create_route1();
+      route_pub_->publish(route_msg);
+      RCLCPP_INFO(rclcpp::get_logger("route_publisher"),"published 4th route");
+      break;
+    }
+    default:
+    {
+      break;
+    }
+  }
+  generate_route_executed_ = true;
 }
 
 void RoutePublisher::pose_Callback(const nav_msgs::msg::Odometry::SharedPtr pose_msg)
 {
-    const geometry_msgs::msg::Point position = pose_msg->pose.pose.position;
-    const int closest_checkpoint = calc_closest_checkpoint(position);
-    generate_route(closest_checkpoint);
+  const geometry_msgs::msg::Point position = pose_msg->pose.pose.position;
+  const int closest_checkpoint = calc_closest_checkpoint(position);
+  generate_route(closest_checkpoint);
 }
 
 int RoutePublisher::calc_closest_checkpoint(const geometry_msgs::msg::Point & position)
 {
-    for (int i = 0; i < checkpoint_vec_.size(); i++)
-    {
-        float x_diff = checkpoint_vec_[i].x - position.x;
-        float y_diff = checkpoint_vec_[i].y - position.y;
+  for(int i = 0; i < checkpoint_vec_.size(); i++)
+  {
+    float x_diff = checkpoint_vec_[i].x - position.x;
+    float y_diff = checkpoint_vec_[i].y - position.y;
 
-        if (std::abs(x_diff) + std::abs(y_diff) < dist_threshold_)
-        {
-            return i + 1;
-        }
+    if(std::abs(x_diff) + std::abs(y_diff) < dist_threshold_)
+    {
+      return i+1;
     }
-    return 0;
+  }
+  return 0;
 }
 
+//[TO-DO]change to single function
 LaneletRoute RoutePublisher::create_route1()
 {
-    LaneletRoute route_msg;
-    LaneletSegment segment;
-    LaneletPrimitive primitive;
+  LaneletRoute route_msg;
+  LaneletSegment segment;
+  LaneletPrimitive primitive;
 
-    route_msg.header.stamp = this->get_clock()->now();
-    route_msg.header.frame_id = "map";
+  route_msg.header.stamp = this->get_clock()->now();
+  route_msg.header.frame_id = "map";
+  
+  route_msg.start_pose.position.x = pose_msg_.pose.pose.position.x;
+  route_msg.start_pose.position.y = pose_msg_.pose.pose.position.y;
+  route_msg.start_pose.position.z = pose_msg_.pose.pose.position.z;
 
-    route_msg.start_pose.position.x = pose_msg_.pose.pose.position.x;
-    route_msg.start_pose.position.y = pose_msg_.pose.pose.position.y;
-    route_msg.start_pose.position.z = pose_msg_.pose.pose.position.z;
+  route_msg.start_pose.orientation.x = pose_msg_.pose.pose.orientation.x;
+  route_msg.start_pose.orientation.y = pose_msg_.pose.pose.orientation.y;
+  route_msg.start_pose.orientation.z = pose_msg_.pose.pose.orientation.z;
+  route_msg.start_pose.orientation.w = pose_msg_.pose.pose.orientation.w;
 
-    route_msg.start_pose.orientation.x = pose_msg_.pose.pose.orientation.x;
-    route_msg.start_pose.orientation.y = pose_msg_.pose.pose.orientation.y;
-    route_msg.start_pose.orientation.z = pose_msg_.pose.pose.orientation.z;
-    route_msg.start_pose.orientation.w = pose_msg_.pose.pose.orientation.w;
+  route_msg.goal_pose.position.x = -254.95880126953125;
+  route_msg.goal_pose.position.y = -370.8807678222656;
+  route_msg.goal_pose.position.z = 15.313650152117422;
 
-    route_msg.goal_pose.position.x = -254.95880126953125;
-    route_msg.goal_pose.position.y = -370.8807678222656;
-    route_msg.goal_pose.position.z = 15.313650152117422;
+  route_msg.goal_pose.orientation.x = 0.0;
+  route_msg.goal_pose.orientation.y = 0.0;
+  route_msg.goal_pose.orientation.z = -0.5042373751665669;
+  route_msg.goal_pose.orientation.w = 0.8635650927898434;
 
-    route_msg.goal_pose.orientation.x = 0.0;
-    route_msg.goal_pose.orientation.y = 0.0;
-    route_msg.goal_pose.orientation.z = -0.5042373751665669;
-    route_msg.goal_pose.orientation.w = 0.8635650927898434;
+  segment.preferred_primitive.id = 524;
+  primitive.id = 524;
+  primitive.primitive_type = "lane";
+  segment.primitives.push_back(primitive);
+  route_msg.segments.push_back(segment);
 
-    segment.preferred_primitive.id = 524;
-    primitive.id = 524;
-    primitive.primitive_type = "lane";
-    segment.primitives.push_back(primitive);
-    route_msg.segments.push_back(segment);
+  segment.preferred_primitive.id = 172;
+  primitive.id = 172;
+  primitive.primitive_type = "lane";
+  segment.primitives.clear();
+  segment.primitives.push_back(primitive);
+  route_msg.segments.push_back(segment);
 
-    segment.preferred_primitive.id = 172;
-    primitive.id = 172;
-    primitive.primitive_type = "lane";
-    segment.primitives.clear();
-    segment.primitives.push_back(primitive);
-    route_msg.segments.push_back(segment);
-
-    return route_msg;
+  return route_msg;
 }
 
 LaneletRoute RoutePublisher::create_route2()
 {
-    LaneletRoute route_msg;
-    LaneletSegment segment;
-    LaneletPrimitive primitive;
+  LaneletRoute route_msg;
+  LaneletSegment segment;
+  LaneletPrimitive primitive;
 
-    route_msg.header.stamp = this->get_clock()->now();
-    route_msg.header.frame_id = "map";
+  route_msg.header.stamp = this->get_clock()->now();
+  route_msg.header.frame_id = "map";
+  
+  route_msg.start_pose.position.x = pose_msg_.pose.pose.position.x;
+  route_msg.start_pose.position.y = pose_msg_.pose.pose.position.y;
+  route_msg.start_pose.position.z = pose_msg_.pose.pose.position.z;
 
-    route_msg.start_pose.position.x = pose_msg_.pose.pose.position.x;
-    route_msg.start_pose.position.y = pose_msg_.pose.pose.position.y;
-    route_msg.start_pose.position.z = pose_msg_.pose.pose.position.z;
+  route_msg.start_pose.orientation.x = pose_msg_.pose.pose.orientation.x;
+  route_msg.start_pose.orientation.y = pose_msg_.pose.pose.orientation.y;
+  route_msg.start_pose.orientation.z = pose_msg_.pose.pose.orientation.z;
+  route_msg.start_pose.orientation.w = pose_msg_.pose.pose.orientation.w;
 
-    route_msg.start_pose.orientation.x = pose_msg_.pose.pose.orientation.x;
-    route_msg.start_pose.orientation.y = pose_msg_.pose.pose.orientation.y;
-    route_msg.start_pose.orientation.z = pose_msg_.pose.pose.orientation.z;
-    route_msg.start_pose.orientation.w = pose_msg_.pose.pose.orientation.w;
+  route_msg.goal_pose.position.x = -126.45575714111328;
+  route_msg.goal_pose.position.y = 45.626609802246094;
+  route_msg.goal_pose.position.z = 0.1628499615996558;
 
-    route_msg.goal_pose.position.x = -126.45575714111328;
-    route_msg.goal_pose.position.y = 45.626609802246094;
-    route_msg.goal_pose.position.z = 0.1628499615996558;
+  route_msg.goal_pose.orientation.x = 0.0;
+  route_msg.goal_pose.orientation.y = 0.0;
+  route_msg.goal_pose.orientation.z = 0.5374917981041666;
+  route_msg.goal_pose.orientation.w = 0.8432689766443148;
 
-    route_msg.goal_pose.orientation.x = 0.0;
-    route_msg.goal_pose.orientation.y = 0.0;
-    route_msg.goal_pose.orientation.z = 0.5374917981041666;
-    route_msg.goal_pose.orientation.w = 0.8432689766443148;
+  segment.preferred_primitive.id = 172;
+  primitive.id = 172;
+  primitive.primitive_type = "lane";
+  segment.primitives.push_back(primitive);
+  route_msg.segments.push_back(segment);
 
-    segment.preferred_primitive.id = 172;
-    primitive.id = 172;
-    primitive.primitive_type = "lane";
-    segment.primitives.push_back(primitive);
-    route_msg.segments.push_back(segment);
+  segment.preferred_primitive.id = 280;
+  primitive.id = 280;
+  primitive.primitive_type = "lane";
+  segment.primitives.clear();
+  segment.primitives.push_back(primitive);
+  route_msg.segments.push_back(segment);
 
-    segment.preferred_primitive.id = 280;
-    primitive.id = 280;
-    primitive.primitive_type = "lane";
-    segment.primitives.clear();
-    segment.primitives.push_back(primitive);
-    route_msg.segments.push_back(segment);
-
-    return route_msg;
+  return route_msg;
 }
 
 LaneletRoute RoutePublisher::create_route3()
