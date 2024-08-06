@@ -10,6 +10,7 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(autoware_planning_msgs REQUIRED)
+find_package(autoware_adapi_v1_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 
 include_directories(include)
@@ -25,6 +26,7 @@ ament_target_dependencies(
   rclcpp_components
   std_msgs
   autoware_planning_msgs
+  autoware_adapi_v1_msgs
   nav_msgs
 )
 

@@ -3,22 +3,50 @@
 namespace route_component
 {
 
-RoutePublisher::RoutePublisher(const rclcpp::NodeOptions & node_options) : Node("route_publisher", node_options)
+RoutePublisher::RoutePublisher(const rclcpp::NodeOptions & node_options)
+: Node("route_publisher", node_options)
 {
-  dist_threshold_ = this->declare_parameter("dist_threshold", 15.0);
+    dist_threshold_ = this->declare_parameter("dist_threshold", 15.0);
+    
+    client_ = this->create_client<SetRoutePoints>(
+        "/api/routing/set_route_points");  
 
-  pose_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-    "/localization/kinematic_state", rclcpp::QoS(1), std::bind(&RoutePublisher::pose_Callback, this,std::placeholders::_1));
+    pose_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
+        "/localization/kinematic_state", rclcpp::QoS(1),
+        std::bind(&RoutePublisher::pose_Callback, this, std::placeholders::_1));
 
-  route_pub_ = this->create_publisher<LaneletRoute>(
-    "/planning/mission_planning/route", rclcpp::QoS(1).transient_local());
-  
-  checkpoint_vec_.push_back({-95.95, -297.46});
-  checkpoint_vec_.push_back({-237.16, -402.70});
-  checkpoint_vec_.push_back({-133.35, 108.05});
-  checkpoint_vec_.push_back({-13.59, 3.99});
+    route_pub_ = this->create_publisher<LaneletRoute>(
+        "/planning/mission_planning/route", rclcpp::QoS(1).transient_local());
 
-  generate_route_executed_ = false;
+    checkpoint_vec_.push_back({-95.95, -297.46});
+    checkpoint_vec_.push_back({-237.16, -402.70});
+    checkpoint_vec_.push_back({-133.35, 108.05});
+    checkpoint_vec_.push_back({-13.59, 3.99});
+    
+    generate_route_executed_ = false;
+}
+
+void RoutePublisher::send_request()   //SHY
+{
+    if (!client_->wait_for_service()) {
+        RCLCPP_WARN(this->get_logger(), "Service not available");
+        return;
+    }
+
+    auto request = std::make_shared<SetRoutePoints::Request>();
+    request->header.stamp = this->now();
+    request->header.frame_id = "map";
+    request->option.allow_goal_modification = false;
+    request->goal.position.x = 0.0;
+    request->goal.position.y = 0.0;
+    request->goal.position.z = 0.0;
+    request->goal.orientation.x = 0.0;
+    request->goal.orientation.y = 0.0;
+    request->goal.orientation.z = 0.0;
+    request->goal.orientation.w = 1.0;
+    request->waypoints.clear();
+
+    client_->async_send_request(request);
 }
 
 void RoutePublisher::generate_route(const int & closest_checkpoint)
@@ -29,6 +57,7 @@ void RoutePublisher::generate_route(const int & closest_checkpoint)
   {
     route_msg = create_route1();
     route_pub_->publish(route_msg);
+    send_request();
   }
 
   switch(closest_checkpoint)
